@@ -368,14 +368,14 @@ st.markdown("""
 <p style="color:#b6c9dc;font-size:17px;margin:10px 0 0 0;">Intelligent Mechanical Fault Diagnosis Agent</p>
 </div>
 <div class="hero-visual" aria-hidden="true"><div class="orbit"></div><div class="orbit orbit-two"></div><div class="core">⚙</div><span class="spark spark-a"></span><span class="spark spark-b"></span></div>
-<div style="border:1px solid rgba(67,217,195,.32);background:rgba(67,217,195,.07);border-radius:12px;padding:12px 15px;color:#bfeee7;font-size:11px;letter-spacing:1.2px;font-weight:700;">LOCAL AI<br>DIAGNOSTIC COPILOT</div>
+<div style="border:1px solid rgba(67,217,195,.32);background:rgba(67,217,195,.07);border-radius:12px;padding:12px 15px;color:#bfeee7;font-size:11px;letter-spacing:1.2px;font-weight:700;">HOSTED AI<br>DIAGNOSTIC COPILOT</div>
 </div>
 </div>
 """, unsafe_allow_html=True)
 
 st.markdown("""
 <div style="display:flex;gap:10px;flex-wrap:wrap;margin:0 0 18px 2px;">
-  <span style="font-size:11px;letter-spacing:1.4px;color:#8de8dc;border:1px solid rgba(67,217,195,.24);background:rgba(67,217,195,.06);padding:7px 10px;border-radius:999px;">● LOCAL AI · OLLAMA</span>
+  <span style="font-size:11px;letter-spacing:1.4px;color:#8de8dc;border:1px solid rgba(67,217,195,.24);background:rgba(67,217,195,.06);padding:7px 10px;border-radius:999px;">● HOSTED AI · GROQ API</span>
   <span style="font-size:11px;letter-spacing:1.4px;color:#b7cde0;border:1px solid rgba(120,170,195,.22);background:rgba(120,170,195,.05);padding:7px 10px;border-radius:999px;">18 FAILURE MODES</span>
   <span style="font-size:11px;letter-spacing:1.4px;color:#b7cde0;border:1px solid rgba(120,170,195,.22);background:rgba(120,170,195,.05);padding:7px 10px;border-radius:999px;">EVIDENCE-LED DIAGNOSIS</span>
 </div>
@@ -812,9 +812,81 @@ st.info(
     "confirm real machine failures."
 )
 
+# Device-data demonstration: values are user-entered or simulated, not live sensor readings.
+st.markdown("""
+<div style="font-size:11px;letter-spacing:2px;font-weight:800;color:#43d9c3;margin:18px 0 6px 0;">DEVICE DATA INPUT</div>
+<div style="font-size:24px;font-weight:800;color:#f0f6ff;margin-bottom:4px;">Simulated machine sensors</div>
+<div style="font-size:14px;color:#a8bbce;margin-bottom:12px;">Enter sample telemetry as if received from vibration, temperature and current sensors. These values are simulated for demonstration.</div>
+""", unsafe_allow_html=True)
+
+with st.expander("Open sensor data panel", expanded=False):
+    with st.form("sensor_data_form"):
+        sensor_col1, sensor_col2, sensor_col3 = st.columns(3)
+        with sensor_col1:
+            sensor_vibration = st.number_input(
+                "Vibration (mm/s RMS)", min_value=0.0, max_value=100.0,
+                value=3.0, step=0.5, help="Demonstration threshold: above 7.1 mm/s is treated as high."
+            )
+        with sensor_col2:
+            sensor_temperature = st.number_input(
+                "Motor temperature (°C)", min_value=-20.0, max_value=250.0,
+                value=55.0, step=1.0, help="Demonstration threshold: above 80 °C is treated as high."
+            )
+        with sensor_col3:
+            sensor_current = st.number_input(
+                "Motor current (A)", min_value=0.0, max_value=1000.0,
+                value=8.0, step=0.5, help="Set a rated-current reference for this demonstration."
+            )
+        rated_current = st.number_input(
+            "Reference rated current (A)", min_value=0.1, max_value=1000.0,
+            value=10.0, step=0.5
+        )
+        sensor_submitted = st.form_submit_button(
+            "Classify Device Data", type="primary", use_container_width=True
+        )
+
+    if sensor_submitted:
+        detected_sensor_symptoms = []
+        sensor_evidence = []
+        if sensor_vibration > 7.1:
+            detected_sensor_symptoms.append("excessive vibration")
+            sensor_evidence.append(f"High vibration: {sensor_vibration:.1f} mm/s RMS")
+        if sensor_temperature > 80:
+            detected_sensor_symptoms.extend(["motor overheating", "high operating temperature"])
+            sensor_evidence.append(f"High motor temperature: {sensor_temperature:.1f} °C")
+        if sensor_current > rated_current * 1.10:
+            detected_sensor_symptoms.append("high motor current")
+            sensor_evidence.append(
+                f"Current above reference: {sensor_current:.1f} A vs {rated_current:.1f} A"
+            )
+
+        # Merge readings into the same rule-based diagnosis used by the chat and checklist.
+        st.session_state.reported_symptoms = sorted(
+            set(st.session_state.reported_symptoms) | set(detected_sensor_symptoms)
+        )
+        st.session_state.diagnosis_started = True
+        st.session_state["sensor_readings"] = {
+            "Vibration (mm/s RMS)": sensor_vibration,
+            "Motor temperature (°C)": sensor_temperature,
+            "Motor current (A)": sensor_current,
+            "Reference rated current (A)": rated_current,
+            "Data source": "Simulated / manually entered for demonstration",
+        }
+        st.session_state["sensor_evidence"] = sensor_evidence
+        st.success("Device data processed by the rule-based classification engine.")
+        if detected_sensor_symptoms:
+            st.write("**Symptoms inferred from the entered readings:** " + ", ".join(sorted(set(detected_sensor_symptoms))))
+            st.caption("Thresholds are illustrative demo rules, not universal engineering limits.")
+        else:
+            st.info("No high-vibration, high-temperature, or overcurrent threshold was triggered.")
+        if sensor_evidence:
+            for evidence_line in sensor_evidence:
+                st.write(f"- {evidence_line}")
+        st.caption("Source: simulated/manual input. No physical sensor is connected.")
+
 # Chat is the primary feature; structured tools follow beneath it.
 # ------------------------------------------
-# Local AI chat assistant (Ollama; no paid API)
+# Hosted AI chat assistant (Groq API)
 # ------------------------------------------
 st.divider()
 st.markdown("""
@@ -828,7 +900,7 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 st.caption(
-    "Local AI · No paid API · Symptoms from your message update the rule-based assessment; inspection findings are only recorded when you submit them below."
+    "Hosted AI · Groq API · Symptoms from your message update the rule-based assessment; inspection findings are only recorded when you submit them below."
 )
 
 if "chat_messages" not in st.session_state:
@@ -965,39 +1037,60 @@ Integration rules:
     chat_payload.extend(st.session_state.chat_messages[-12:])
 
     with st.chat_message("assistant"):
-        with st.spinner("Analysing the description with your local model..."):
+        with st.spinner("Analysing the description with the hosted AI..."):
             try:
-                response = requests.post(
-                    "http://localhost:11434/api/chat",
-                    json={
-                        "model": "llama3.2:3b",
-                        "messages": chat_payload,
-                        "stream": False,
-                        "options": {"temperature": 0.2},
-                    },
-                    timeout=180,
-                )
-                response.raise_for_status()
-                answer = response.json().get("message", {}).get("content", "").strip()
-                if not answer:
-                    answer = "The local model returned an empty response. Please try again."
-            except requests.exceptions.ConnectionError:
-                answer = (
-                    "I couldn't connect to Ollama. Make sure Ollama is installed and running, "
-                    "then check Command Prompt with `ollama list`."
-                )
+                # Streamlit Cloud: add GROQ_API_KEY under App -> Settings -> Secrets.
+                # The key is read from secrets and is never embedded in this source file.
+                try:
+                    groq_api_key = st.secrets.get("GROQ_API_KEY", "")
+                except Exception:
+                    groq_api_key = ""
+
+                if not groq_api_key:
+                    answer = (
+                        "The hosted AI API key is not configured yet. In Streamlit Cloud, "
+                        "open your app's Settings → Secrets and add GROQ_API_KEY. "
+                        "The rule-based diagnostic tools remain available without the chat model."
+                    )
+                else:
+                    response = requests.post(
+                        "https://api.groq.com/openai/v1/chat/completions",
+                        headers={
+                            "Authorization": f"Bearer {groq_api_key}",
+                            "Content-Type": "application/json",
+                        },
+                        json={
+                            "model": "llama-3.3-70b-versatile",
+                            "messages": chat_payload,
+                            "temperature": 0.2,
+                            "max_tokens": 900,
+                        },
+                        timeout=60,
+                    )
+                    response.raise_for_status()
+                    answer = (
+                        response.json().get("choices", [{}])[0]
+                        .get("message", {}).get("content", "").strip()
+                    )
+                    if not answer:
+                        answer = "The hosted model returned an empty response. Please try again."
             except requests.exceptions.Timeout:
-                answer = (
-                    "The local model took too long to respond. Try a shorter question or "
-                    "close other demanding applications and try again."
-                )
-            except requests.exceptions.RequestException as exc:
-                answer = (
-                    f"Ollama returned an error: {exc}. Check that `llama3.2:3b` is installed "
-                    "by running `ollama list` in Command Prompt."
-                )
-            except (ValueError, KeyError, TypeError):
-                answer = "I couldn't read the response from Ollama. Please try again."
+                answer = "The hosted AI took too long to respond. Please try again."
+            except requests.exceptions.HTTPError as exc:
+                status_code = exc.response.status_code if exc.response is not None else "unknown"
+                if status_code in (401, 403):
+                    answer = (
+                        "The hosted AI rejected the API key. Check that GROQ_API_KEY is correct "
+                        "in Streamlit Cloud → Settings → Secrets."
+                    )
+                elif status_code == 429:
+                    answer = "The hosted AI rate limit has been reached. Please wait and try again."
+                else:
+                    answer = f"The hosted AI request failed (HTTP {status_code}). Please try again."
+            except requests.exceptions.RequestException:
+                answer = "Could not reach the hosted AI service. Check the app's connection and try again."
+            except (ValueError, KeyError, IndexError, TypeError):
+                answer = "I couldn't read the response from the hosted AI. Please try again."
         st.markdown(answer)
 
     st.session_state.chat_messages.append(
@@ -1179,6 +1272,18 @@ if st.session_state.diagnosis_started:
         else:
             report.append("- No inspection results recorded.")
 
+        sensor_readings = st.session_state.get("sensor_readings")
+        if sensor_readings:
+            report.extend(["", "Device data (simulated/manual input):"])
+            report.extend(
+                f"- {name}: {value}"
+                for name, value in sensor_readings.items()
+            )
+            report.extend(
+                f"- Threshold evidence: {item}"
+                for item in st.session_state.get("sensor_evidence", [])
+            )
+
         report.extend(["", "Ranked potential causes:"])
 
         positive_report_candidates = [candidate for candidate in ranked if candidate["score"] > 0]
@@ -1237,6 +1342,8 @@ if st.button("Reset Investigation"):
     st.session_state.inspection_results = {}
     st.session_state.reported_symptoms = []
     st.session_state.diagnosis_started = False
+    st.session_state.pop("sensor_readings", None)
+    st.session_state.pop("sensor_evidence", None)
     st.rerun()
 
 st.caption(
