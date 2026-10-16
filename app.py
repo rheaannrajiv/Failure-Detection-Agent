@@ -1060,7 +1060,7 @@ Integration rules:
                             "Content-Type": "application/json",
                         },
                         json={
-                            "model": "llama-3.3-70b-versatile",
+                            "model": st.secrets.get("GROQ_MODEL", "openai/gpt-oss-20b"),
                             "messages": chat_payload,
                             "temperature": 0.2,
                             "max_tokens": 900,
@@ -1083,10 +1083,22 @@ Integration rules:
                         "The hosted AI rejected the API key. Check that GROQ_API_KEY is correct "
                         "in Streamlit Cloud → Settings → Secrets."
                     )
+                elif status_code == 404:
+                    answer = (
+                        "Groq could not find the configured model (HTTP 404). The previous "
+                        "Llama 3.3 model was retired for developer-tier accounts. This version "
+                        "defaults to openai/gpt-oss-20b. If you set GROQ_MODEL in Streamlit Secrets, "
+                        "remove it or set it to openai/gpt-oss-20b, then restart the app."
+                    )
                 elif status_code == 429:
                     answer = "The hosted AI rate limit has been reached. Please wait and try again."
                 else:
-                    answer = f"The hosted AI request failed (HTTP {status_code}). Please try again."
+                    # Show a short provider error when available, without exposing the API key.
+                    try:
+                        provider_message = exc.response.json().get("error", {}).get("message", "")
+                    except (ValueError, AttributeError):
+                        provider_message = ""
+                    answer = f"The hosted AI request failed (HTTP {status_code}). {provider_message[:240]}"
             except requests.exceptions.RequestException:
                 answer = "Could not reach the hosted AI service. Check the app's connection and try again."
             except (ValueError, KeyError, IndexError, TypeError):
