@@ -1,6 +1,10 @@
 
 import streamlit as st
 import requests
+import io
+import numpy as np
+import pandas as pd
+from scipy.io import loadmat
 
 # ==========================================
 # FAILURE DETECTIVE AI
@@ -694,6 +698,125 @@ def extract_symptoms_from_text(text):
     return found
 
 # ------------------------------------------
+# Public sensor dataset analysis helpers
+# ------------------------------------------
+def read_sensor_file(uploaded_file):
+    """Read CSV or MATLAB (.mat) sensor recordings into numeric channels.
+
+    CSV files should contain one numeric sensor channel per column. For MATLAB
+    files (e.g. CWRU), numeric arrays with at least 128 samples are extracted.
+    The original units are retained as unknown unless supplied in the file.
+    """
+    if uploaded_file is None:
+        return {}
+    filename = uploaded_file.name.lower()
+    try:
+        if filename.endswith('.csv') or filename.endswith('.txt'):
+            frame = pd.read_csv(uploaded_file)
+            channels = {}
+            for col in frame.columns:
+                values = pd.to_numeric(frame[col], errors='coerce').dropna().to_numpy(dtype=float)
+                values = values[np.isfinite(values)]
+                if values.size >= 128:
+                    channels[str(col)] = values
+            return channels
+        if filename.endswith('.mat'):
+            mat = loadmat(io.BytesIO(uploaded_file.getvalue()))
+            channels = {}
+            for key, value in mat.items():
+                if key.startswith('__'):
+                    continue
+                arr = np.asarray(value)
+                if arr.dtype.kind in 'iuf' and arr.size >= 128:
+                    arr = np.squeeze(arr).astype(float).ravel()
+                    arr = arr[np.isfinite(arr)]
+                    if arr.size >= 128:
+                        # CWRU filenames include recording IDs in variable names
+                        # (e.g. X097_DE_time); normalize known sensor locations
+                        # so healthy and test files can be compared.
+                        canonical = str(key)
+                        for suffix in ("DE_time", "FE_time", "BA_time"):
+                            if canonical.endswith(suffix):
+                                canonical = suffix
+                                break
+                        channels[canonical] = arr
+            return channels
+    except Exception as exc:
+        raise ValueError(f'Could not read {uploaded_file.name}: {exc}') from exc
+    raise ValueError('Upload a CSV or MATLAB .mat file.')
+
+
+def window_features(values, window_size=2048):
+    """Calculate comparable time-domain features on non-overlapping windows."""
+    values = np.asarray(values, dtype=float)
+    values = values[np.isfinite(values)]
+    if values.size < 16:
+        return pd.DataFrame()
+    # Keep windows large enough for stable descriptive statistics; use the
+    # entire signal as one window for shorter recordings.
+    size = min(window_size, max(128, values.size // 2)) if values.size < window_size else window_size
+    chunks = [values[i:i + size] for i in range(0, values.size, size) if len(values[i:i + size]) >= min(128, size)]
+    rows = []
+    for chunk in chunks:
+        rms = float(np.sqrt(np.mean(np.square(chunk))))
+        mean_abs = float(np.mean(np.abs(chunk)))
+        rows.append({
+            'RMS': rms,
+            'Standard deviation': float(np.std(chunk)),
+            'Peak absolute amplitude': float(np.max(np.abs(chunk))),
+            'Crest factor': float(np.max(np.abs(chunk)) / rms) if rms > 1e-12 else 0.0,
+            'Mean': float(np.mean(chunk)),
+        })
+    return pd.DataFrame(rows)
+
+
+def build_baseline(channels):
+    """Build empirical reference statistics from user-supplied healthy data."""
+    output = {}
+    for channel, values in channels.items():
+        feats = window_features(values)
+        if not feats.empty:
+            output[channel] = {
+                name: {'mean': float(feats[name].mean()),
+                       'std': float(feats[name].std(ddof=0)),
+                       'lower': float(feats[name].quantile(0.01)),
+                       'upper': float(feats[name].quantile(0.99))}
+                for name in feats.columns
+            }
+    return output
+
+
+def assess_against_baseline(test_channels, baseline):
+    """Compare test feature windows to empirical healthy 1st–99th percentiles."""
+    rows = []
+    for channel, values in test_channels.items():
+        if channel not in baseline:
+            continue
+        feats = window_features(values)
+        if feats.empty:
+            continue
+        for feature in feats.columns:
+            if feature not in baseline[channel]:
+                continue
+            ref = baseline[channel][feature]
+            test_median = float(feats[feature].median())
+            # Use the healthy-data 1st/99th percentiles; these are empirical
+            # dataset thresholds, not universal machine safety limits.
+            abnormal = test_median < ref['lower'] or test_median > ref['upper']
+            rows.append({
+                'Channel': channel,
+                'Feature': feature,
+                'Healthy reference mean': ref['mean'],
+                'Healthy 1st percentile': ref['lower'],
+                'Healthy 99th percentile': ref['upper'],
+                'Test median': test_median,
+                'Assessment': 'Outside healthy reference' if abnormal else 'Within healthy reference',
+                'Test windows': int(len(feats)),
+            })
+    return pd.DataFrame(rows)
+
+
+# ------------------------------------------
 # Agent reasoning engine
 # ------------------------------------------
 
@@ -812,10 +935,83 @@ st.info(
     "confirm real machine failures."
 )
 
+# ==========================================
+# REAL RECORDED SENSOR DATA / HEALTHY BASELINE
+# ==========================================
+st.markdown("""
+<div style="font-size:11px;letter-spacing:2px;font-weight:800;color:#43d9c3;margin:18px 0 6px 0;">RECORDED DATA ANALYSIS</div>
+<div style="font-size:24px;font-weight:800;color:#f0f6ff;margin-bottom:4px;">Healthy baseline vs. test recording</div>
+<div style="font-size:14px;color:#a8bbce;margin-bottom:12px;">Upload a real recorded healthy sensor signal and a test recording. The app learns reference ranges from the healthy file and flags test features that fall outside those observed ranges.</div>
+""", unsafe_allow_html=True)
+with st.expander("Open real dataset analysis", expanded=False):
+    st.markdown("**Supported formats:** CSV (numeric sensor columns) and MATLAB `.mat` files, including common bearing-test recordings. For a fair comparison, use healthy and test recordings from the same sensor location, machine, sampling setup, and operating condition.")
+    base_col, test_col = st.columns(2)
+    with base_col:
+        healthy_upload = st.file_uploader("Healthy / normal recording", type=["csv", "txt", "mat"], key="healthy_sensor_upload", help="Use a recording labelled healthy/normal from a public dataset or your own sensor export.")
+    with test_col:
+        test_upload = st.file_uploader("Recording to assess", type=["csv", "txt", "mat"], key="test_sensor_upload", help="Upload another recording from the same dataset and matching sensor channel.")
+    run_dataset_analysis = st.button("Build baseline and analyse recording", type="primary", use_container_width=True, key="run_real_dataset_analysis")
+    if run_dataset_analysis:
+        if healthy_upload is None or test_upload is None:
+            st.warning("Upload both a healthy reference recording and a test recording.")
+        else:
+            try:
+                healthy_channels = read_sensor_file(healthy_upload)
+                test_channels = read_sensor_file(test_upload)
+                if not healthy_channels:
+                    st.error("No numeric sensor channels with at least 128 samples were found in the healthy file.")
+                elif not test_channels:
+                    st.error("No numeric sensor channels with at least 128 samples were found in the test file.")
+                else:
+                    healthy_baseline = build_baseline(healthy_channels)
+                    result_table = assess_against_baseline(test_channels, healthy_baseline)
+                    st.session_state["dataset_baseline_summary"] = {
+                        "healthy_file": healthy_upload.name,
+                        "test_file": test_upload.name,
+                        "healthy_channels": sorted(healthy_channels.keys()),
+                        "test_channels": sorted(test_channels.keys()),
+                        "baseline": healthy_baseline,
+                    }
+                    st.session_state["dataset_assessment_table"] = result_table
+                    if result_table.empty:
+                        st.warning("No matching channel names were found between the two files. Ensure both recordings use the same column or MATLAB variable names.")
+                    else:
+                        st.success(f"Analysed {len(result_table)} channel-feature comparisons using recorded data.")
+            except (ValueError, TypeError, KeyError) as exc:
+                st.error(str(exc))
+            except Exception as exc:
+                st.error(f"Dataset analysis could not be completed: {exc}")
+
+    if st.session_state.get("dataset_baseline_summary"):
+        summary = st.session_state["dataset_baseline_summary"]
+        st.caption(f"Healthy reference: {summary['healthy_file']} · Test recording: {summary['test_file']}")
+        st.caption("Healthy channels: " + ", ".join(summary["healthy_channels"]))
+        result_table = st.session_state.get("dataset_assessment_table", pd.DataFrame())
+        if not result_table.empty:
+            st.dataframe(result_table, use_container_width=True, hide_index=True)
+            outside_count = int((result_table["Assessment"] == "Outside healthy reference").sum())
+            inside_count = int((result_table["Assessment"] == "Within healthy reference").sum())
+            metric_cols = st.columns(2)
+            metric_cols[0].metric("Features outside reference", outside_count)
+            metric_cols[1].metric("Features within reference", inside_count)
+            st.download_button(
+                "Download sensor assessment CSV",
+                data=result_table.to_csv(index=False).encode("utf-8"),
+                file_name="failure_detective_sensor_assessment.csv",
+                mime="text/csv",
+                key="download_sensor_assessment_csv",
+            )
+            st.info("This is a statistical anomaly screen against the uploaded healthy recording, not a confirmed fault diagnosis. Thresholds are learned from that file's feature distribution; they are not universal engineering limits.")
+
+    st.markdown("**Public research datasets**")
+    st.markdown("- [Case Western Reserve University Bearing Data Center](https://engineering.case.edu/bearingdatacenter/download-data-file) — normal and faulty bearing vibration recordings in MATLAB format.\n- [Paderborn University Bearing Data Center](https://mb.uni-paderborn.de/kat/forschung/bearing-datacenter/data-sets-and-download) — vibration and motor-current recordings for healthy and damaged bearing conditions; review the dataset licence and citation requirements.")
+    st.caption("For a class demonstration, download a healthy recording and a corresponding faulty/test recording from one source. Match the same channel and operating condition. The app does not download these datasets automatically.")
+
+
 # Device-data demonstration: values are user-entered or simulated, not live sensor readings.
 st.markdown("""
 <div style="font-size:11px;letter-spacing:2px;font-weight:800;color:#43d9c3;margin:18px 0 6px 0;">DEVICE DATA INPUT</div>
-<div style="font-size:24px;font-weight:800;color:#f0f6ff;margin-bottom:4px;">Simulated machine sensors</div>
+<div style="font-size:24px;font-weight:800;color:#f0f6ff;margin-bottom:4px;">Manual / simulated sensor inputs</div>
 <div style="font-size:14px;color:#a8bbce;margin-bottom:12px;">Enter sample telemetry as if received from vibration, temperature and current sensors. These values are simulated for demonstration.</div>
 """, unsafe_allow_html=True)
 
@@ -1323,6 +1519,19 @@ if st.session_state.diagnosis_started:
 )
             ])
 
+        dataset_results = st.session_state.get("dataset_assessment_table")
+        dataset_summary = st.session_state.get("dataset_baseline_summary")
+        if dataset_summary and isinstance(dataset_results, pd.DataFrame) and not dataset_results.empty:
+            report.extend(["", "RECORDED SENSOR DATA ASSESSMENT:",
+                           f"Healthy reference file: {dataset_summary['healthy_file']}",
+                           f"Test recording: {dataset_summary['test_file']}"])
+            for _, result_row in dataset_results.iterrows():
+                report.append(
+                    f"- {result_row['Channel']} / {result_row['Feature']}: {result_row['Assessment']} "
+                    f"(test median={result_row['Test median']:.6g}; healthy range="
+                    f"{result_row['Healthy 1st percentile']:.6g} to {result_row['Healthy 99th percentile']:.6g})"
+                )
+
         report.extend([
             "",
             "LIMITATION:",
@@ -1356,6 +1565,8 @@ if st.button("Reset Investigation"):
     st.session_state.diagnosis_started = False
     st.session_state.pop("sensor_readings", None)
     st.session_state.pop("sensor_evidence", None)
+    st.session_state.pop("dataset_baseline_summary", None)
+    st.session_state.pop("dataset_assessment_table", None)
     st.rerun()
 
 st.caption(
