@@ -816,6 +816,40 @@ def assess_against_baseline(test_channels, baseline):
     return pd.DataFrame(rows)
 
 
+@st.cache_data(ttl=86400, show_spinner=False)
+def load_builtin_cwru_recordings():
+    """Fetch two preconfigured CWRU recordings; users do not upload files.
+
+    The files are publicly hosted samples from the CWRU bearing dataset mirror.
+    They are downloaded on demand and cached by Streamlit for 24 hours.
+    """
+    source_files = {
+        "healthy": "https://raw.githubusercontent.com/s-whynot/CWRU-dataset/main/Normal/97_Normal_0.mat",
+        "inner_race_fault": "https://raw.githubusercontent.com/s-whynot/CWRU-dataset/main/12k_Drive_End_Bearing_Fault_Data/IR/007/105_0.mat",
+    }
+    output = {}
+    for label, url in source_files.items():
+        response = requests.get(url, timeout=30)
+        response.raise_for_status()
+        mat = loadmat(io.BytesIO(response.content))
+        # CWRU recordings contain keys such as X097_DE_time / X105_DE_time.
+        # Use drive-end acceleration for a consistent comparison.
+        signal = None
+        for key, value in mat.items():
+            if key.startswith("__"):
+                continue
+            if key.endswith("DE_time"):
+                arr = np.asarray(value).squeeze().astype(float).ravel()
+                arr = arr[np.isfinite(arr)]
+                if arr.size >= 128:
+                    signal = arr
+                    break
+        if signal is None:
+            raise ValueError(f"Could not find a drive-end vibration channel in the built-in {label} recording.")
+        output[label] = {"DE_time": signal}
+    return output
+
+
 # ------------------------------------------
 # Agent reasoning engine
 # ------------------------------------------
@@ -936,56 +970,50 @@ st.info(
 )
 
 # ==========================================
-# REAL RECORDED SENSOR DATA / HEALTHY BASELINE
+# BUILT-IN REAL RECORDED SENSOR DATA
 # ==========================================
 st.markdown("""
-<div style="font-size:11px;letter-spacing:2px;font-weight:800;color:#43d9c3;margin:18px 0 6px 0;">RECORDED DATA ANALYSIS</div>
-<div style="font-size:24px;font-weight:800;color:#f0f6ff;margin-bottom:4px;">Healthy baseline vs. test recording</div>
-<div style="font-size:14px;color:#a8bbce;margin-bottom:12px;">Upload a real recorded healthy sensor signal and a test recording. The app learns reference ranges from the healthy file and flags test features that fall outside those observed ranges.</div>
+<div style="font-size:11px;letter-spacing:2px;font-weight:800;color:#43d9c3;margin:18px 0 6px 0;">BUILT-IN RECORDED DATASET</div>
+<div style="font-size:24px;font-weight:800;color:#f0f6ff;margin-bottom:4px;">Real bearing data — ready to analyse</div>
+<div style="font-size:14px;color:#a8bbce;margin-bottom:12px;">No file upload required. Load a preconfigured pair of real vibration recordings from the Case Western Reserve University (CWRU) bearing dataset: one healthy baseline and one inner-race bearing fault.</div>
 """, unsafe_allow_html=True)
-with st.expander("Open real dataset analysis", expanded=False):
-    st.markdown("**Supported formats:** CSV (numeric sensor columns) and MATLAB `.mat` files, including common bearing-test recordings. For a fair comparison, use healthy and test recordings from the same sensor location, machine, sampling setup, and operating condition.")
-    base_col, test_col = st.columns(2)
-    with base_col:
-        healthy_upload = st.file_uploader("Healthy / normal recording", type=["csv", "txt", "mat"], key="healthy_sensor_upload", help="Use a recording labelled healthy/normal from a public dataset or your own sensor export.")
-    with test_col:
-        test_upload = st.file_uploader("Recording to assess", type=["csv", "txt", "mat"], key="test_sensor_upload", help="Upload another recording from the same dataset and matching sensor channel.")
-    run_dataset_analysis = st.button("Build baseline and analyse recording", type="primary", use_container_width=True, key="run_real_dataset_analysis")
-    if run_dataset_analysis:
-        if healthy_upload is None or test_upload is None:
-            st.warning("Upload both a healthy reference recording and a test recording.")
-        else:
-            try:
-                healthy_channels = read_sensor_file(healthy_upload)
-                test_channels = read_sensor_file(test_upload)
-                if not healthy_channels:
-                    st.error("No numeric sensor channels with at least 128 samples were found in the healthy file.")
-                elif not test_channels:
-                    st.error("No numeric sensor channels with at least 128 samples were found in the test file.")
+with st.expander("Open built-in dataset analysis", expanded=True):
+    st.markdown("**Dataset included by configuration** · Drive-end bearing vibration · 12 kHz recordings · Healthy baseline compared with an inner-race fault recording. The app fetches the public files automatically on first analysis and caches them for 24 hours.")
+    st.caption("Source: CWRU Bearing Data Center dataset mirror. These are laboratory recordings with seeded bearing faults, not live measurements from your own machine. The files are fetched from the internet, so the first analysis requires network access.")
+    run_builtin_dataset = st.button("Load built-in dataset and analyse", type="primary", use_container_width=True, key="run_builtin_cwru_analysis")
+    if run_builtin_dataset:
+        try:
+            with st.spinner("Loading the built-in healthy and faulty recordings..."):
+                cwru = load_builtin_cwru_recordings()
+                healthy_channels = cwru["healthy"]
+                test_channels = cwru["inner_race_fault"]
+                healthy_baseline = build_baseline(healthy_channels)
+                result_table = assess_against_baseline(test_channels, healthy_baseline)
+                st.session_state["dataset_baseline_summary"] = {
+                    "healthy_file": "CWRU 97_Normal_0.mat (healthy, 0 HP)",
+                    "test_file": "CWRU 105_0.mat (inner-race fault, 0 HP)",
+                    "healthy_channels": sorted(healthy_channels.keys()),
+                    "test_channels": sorted(test_channels.keys()),
+                    "baseline": healthy_baseline,
+                    "dataset_source": "Case Western Reserve University Bearing Data Center (public mirror)",
+                    "dataset_mode": "Built-in preconfigured dataset",
+                }
+                st.session_state["dataset_assessment_table"] = result_table
+                if result_table.empty:
+                    st.warning("The recordings loaded, but no comparable features were produced.")
                 else:
-                    healthy_baseline = build_baseline(healthy_channels)
-                    result_table = assess_against_baseline(test_channels, healthy_baseline)
-                    st.session_state["dataset_baseline_summary"] = {
-                        "healthy_file": healthy_upload.name,
-                        "test_file": test_upload.name,
-                        "healthy_channels": sorted(healthy_channels.keys()),
-                        "test_channels": sorted(test_channels.keys()),
-                        "baseline": healthy_baseline,
-                    }
-                    st.session_state["dataset_assessment_table"] = result_table
-                    if result_table.empty:
-                        st.warning("No matching channel names were found between the two files. Ensure both recordings use the same column or MATLAB variable names.")
-                    else:
-                        st.success(f"Analysed {len(result_table)} channel-feature comparisons using recorded data.")
-            except (ValueError, TypeError, KeyError) as exc:
-                st.error(str(exc))
-            except Exception as exc:
-                st.error(f"Dataset analysis could not be completed: {exc}")
+                    st.success(f"Built-in CWRU recordings analysed: {len(result_table)} feature comparisons.")
+        except requests.exceptions.RequestException as exc:
+            st.error("The built-in dataset could not be fetched. Check the app's internet connection and retry. No file upload is needed. Details: " + str(exc)[:220])
+        except (ValueError, TypeError, KeyError) as exc:
+            st.error(f"The built-in dataset could not be analysed: {exc}")
+        except Exception as exc:
+            st.error(f"Dataset analysis failed: {exc}")
 
     if st.session_state.get("dataset_baseline_summary"):
         summary = st.session_state["dataset_baseline_summary"]
         st.caption(f"Healthy reference: {summary['healthy_file']} · Test recording: {summary['test_file']}")
-        st.caption("Healthy channels: " + ", ".join(summary["healthy_channels"]))
+        st.caption("Matched sensor channel(s): " + ", ".join(summary["healthy_channels"]))
         result_table = st.session_state.get("dataset_assessment_table", pd.DataFrame())
         if not result_table.empty:
             st.dataframe(result_table, use_container_width=True, hide_index=True)
@@ -995,17 +1023,14 @@ with st.expander("Open real dataset analysis", expanded=False):
             metric_cols[0].metric("Features outside reference", outside_count)
             metric_cols[1].metric("Features within reference", inside_count)
             st.download_button(
-                "Download sensor assessment CSV",
+                "Download built-in dataset assessment CSV",
                 data=result_table.to_csv(index=False).encode("utf-8"),
-                file_name="failure_detective_sensor_assessment.csv",
+                file_name="failure_detective_cwru_assessment.csv",
                 mime="text/csv",
                 key="download_sensor_assessment_csv",
             )
-            st.info("This is a statistical anomaly screen against the uploaded healthy recording, not a confirmed fault diagnosis. Thresholds are learned from that file's feature distribution; they are not universal engineering limits.")
-
-    st.markdown("**Public research datasets**")
-    st.markdown("- [Case Western Reserve University Bearing Data Center](https://engineering.case.edu/bearingdatacenter/download-data-file) — normal and faulty bearing vibration recordings in MATLAB format.\n- [Paderborn University Bearing Data Center](https://mb.uni-paderborn.de/kat/forschung/bearing-datacenter/data-sets-and-download) — vibration and motor-current recordings for healthy and damaged bearing conditions; review the dataset licence and citation requirements.")
-    st.caption("For a class demonstration, download a healthy recording and a corresponding faulty/test recording from one source. Match the same channel and operating condition. The app does not download these datasets automatically.")
+            st.info("The app learns feature ranges from the healthy CWRU recording and flags deviations in the fault recording. This is a statistical anomaly screen, not a trained universal classifier or a confirmed diagnosis.")
+    st.markdown("**Dataset source:** [CWRU Bearing Data Center — official project page](https://engineering.case.edu/bearingdatacenter/download-data-file) · [Public dataset mirror](https://github.com/s-whynot/CWRU-dataset).")
 
 
 # Device-data demonstration: values are user-entered or simulated, not live sensor readings.

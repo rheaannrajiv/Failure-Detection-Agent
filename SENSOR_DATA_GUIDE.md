@@ -1,30 +1,22 @@
-# Sensor dataset workflow for Failure Detective AI
+# Built-in sensor dataset for Failure Detective AI
 
-## Recommended first test
+## Run the analysis
 
-Use the Case Western Reserve University (CWRU) Bearing Data Center. Download one healthy/normal recording and one faulty recording from the same operating condition. Upload both `.mat` files in the app's **Healthy baseline vs. test recording** panel. Use the same channel (normally drive-end `DE_time`) in both files.
+1. Open **Real bearing data — ready to analyse** in the app.
+2. Click **Load built-in dataset and analyse**. No file upload is needed.
+3. The app fetches a healthy CWRU recording (`97_Normal_0.mat`) and an inner-race fault recording (`105_0.mat`) from the public dataset mirror.
+4. It extracts the drive-end vibration signal, computes RMS, standard deviation, peak amplitude, crest factor, and mean, and compares the faulty recording with the healthy reference range.
+5. Review the feature table and download the CSV report.
 
-Official dataset page: https://engineering.case.edu/bearingdatacenter/download-data-file
+## Dataset provenance
 
-The CWRU page states that the recordings include normal bearings and single-point bearing defects; the data include drive-end/fan-end/base vibration signals and motor speed. It is laboratory data from a specific test motor, not universal limits for industrial equipment.
+- Official source/project: https://engineering.case.edu/bearingdatacenter/download-data-file
+- Public mirror used by the app: https://github.com/s-whynot/CWRU-dataset
+- Preconfigured recordings: `Normal/97_Normal_0.mat` and `12k_Drive_End_Bearing_Fault_Data/IR/007/105_0.mat`
+- Sampling: 12 kHz drive-end vibration; the pair is from the 0 HP operating condition.
 
-## Alternative
+The app retrieves the files automatically on first use and caches them for 24 hours. Internet access is required for the initial fetch. These are real laboratory measurements, not live readings from the user's machine. The statistical baseline is an anomaly screen, not a trained universal classifier or proof of a particular fault.
 
-Paderborn University provides vibration and motor-current signals from healthy and damaged bearings. Its dataset is larger and has licence/citation conditions; check these before using it in a report:
-https://mb.uni-paderborn.de/kat/forschung/bearing-datacenter/data-sets-and-download
+## What to say in your presentation
 
-## What to demonstrate
-
-1. Upload a healthy recording as the reference.
-2. Upload a recording to assess.
-3. Explain that the app calculates RMS, standard deviation, peak absolute amplitude, crest factor, and mean in signal windows.
-4. Show which test features fall outside the empirical 1st–99th percentile range from the healthy recording.
-5. Explain that this is anomaly screening. A deviation is evidence to investigate, not a confirmed diagnosis.
-
-## Data quality checklist
-
-- Same dataset and sensor location for both recordings.
-- Same or comparable machine speed/load/operating condition.
-- Use the same MATLAB variable/channel name where possible; known CWRU DE/FE/BA names are normalized by the app.
-- Cite the dataset source in your presentation/report.
-- Do not describe public laboratory data as live readings from your own hardware.
+"The application includes a preconfigured real sensor-data workflow using publicly available CWRU bearing recordings. It compares a healthy bearing reference with a known inner-race fault recording. The system extracts time-domain features and flags deviations without requiring the user to upload data. The recordings are laboratory data, so results should not be treated as universal machine limits."
