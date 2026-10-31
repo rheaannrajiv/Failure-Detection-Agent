@@ -26,3 +26,21 @@ def test_catalog_tool_is_compact_and_complete():
     result = _run_tool("list_fault_catalog", {})
     assert len(result["faults"]) == 18
     assert all(len(item["checks"]) <= 4 for item in result["faults"])
+
+
+
+def test_sensor_tool_requires_attached_upload():
+    result = _run_tool("analyze_uploaded_sensor_data", {})
+    assert "error" in result
+
+
+def test_sensor_tool_returns_uploaded_analysis_compactly():
+    sample = {
+        "features": [{"Channel": "DE_time", "Feature": "RMS", "Assessment": "Outside healthy reference"}],
+        "inferred_symptoms": ["excessive vibration"],
+        "evidence_notes": ["Amplitude differs from reference."],
+        "method_note": "Empirical reference comparison.",
+    }
+    result = _run_tool("analyze_uploaded_sensor_data", {}, sensor_analysis=sample)
+    assert result["inferred_symptoms"] == ["excessive vibration"]
+    assert result["features"][0]["Feature"] == "RMS"

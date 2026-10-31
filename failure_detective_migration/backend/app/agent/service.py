@@ -88,13 +88,23 @@ def _post_groq(payload: dict[str, Any], api_key: str) -> dict[str, Any]:
         raise GroqProviderError(502, "Groq returned an invalid JSON response.") from exc
 
 
-def _run_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+def _run_tool(name: str, arguments: dict[str, Any], sensor_analysis: dict[str, Any] | None = None) -> dict[str, Any]:
     if name == "list_fault_catalog":
         # Keep tool output small: return names and concise labels, not the full catalog prose.
         return {"faults": [
             {"name": fault, "symptoms": data["symptoms"][:5], "checks": data["checks"][:4]}
             for fault, data in FAILURES.items()
         ]}
+    if name == "analyze_uploaded_sensor_data":
+        if sensor_analysis is None:
+            return {"error": "No sensor file was attached to this investigation."}
+        # Keep the model-facing payload compact while preserving key evidence.
+        return {
+            "features": sensor_analysis.get("features", [])[:24],
+            "inferred_symptoms": sensor_analysis.get("inferred_symptoms", []),
+            "evidence_notes": sensor_analysis.get("evidence_notes", []),
+            "method_note": sensor_analysis.get("method_note", ""),
+        }
     if name == "diagnose_machine":
         description = str(arguments.get("description", ""))[:4000]
         symptoms = arguments.get("symptoms") or []
@@ -136,7 +146,7 @@ def _normalise_history(history: list[dict[str, str]] | None) -> list[dict[str, s
     return safe
 
 
-def run_agent(message: str, history: list[dict[str, str]] | None = None) -> dict[str, Any]:
+def run_agent(message: str, history: list[dict[str, str]] | None = None, sensor_analysis: dict[str, Any] | None = None) -> dict[str, Any]:
     api_key = os.getenv("GROQ_API_KEY", "").strip()
     if not api_key:
         raise RuntimeError("GROQ_API_KEY is not configured on the backend.")
@@ -149,9 +159,16 @@ def run_agent(message: str, history: list[dict[str, str]] | None = None) -> dict
     messages.append({"role": "user", "content": message[:4000]})
     tool_log: list[dict[str, Any]] = []
     base_payload = {"model": model, "temperature": 0.2, "max_tokens": MAX_COMPLETION_TOKENS}
+    active_tools = TOOLS + ([{"type": "function", "function": {
+        "name": "analyze_uploaded_sensor_data",
+        "description": "Inspect the sensor file already uploaded with this investigation. Returns measured vibration features, conservative inferred symptoms and comparison notes. Use before diagnosing when sensor data is attached.",
+        "parameters": {"type": "object", "properties": {}, "additionalProperties": False},
+    }}] if sensor_analysis is not None else [])
+    if sensor_analysis is not None:
+        messages[0] = {"role": "system", "content": SYSTEM_PROMPT + "\nA sensor file is attached. You have an analyze_uploaded_sensor_data tool; invoke it to inspect the measured evidence before finalising your assessment. Do not claim you analysed the file unless that tool appears in tool_calls."}
 
     for _ in range(MAX_TOOL_ROUNDS + 1):
-        payload = {**base_payload, "messages": messages, "tools": TOOLS, "tool_choice": "auto"}
+        payload = {**base_payload, "messages": messages, "tools": active_tools, "tool_choice": "auto"}
         data = _post_groq(payload, api_key)
         choice = data["choices"][0]["message"]
         messages.append(choice)
@@ -163,6 +180,7 @@ def run_agent(message: str, history: list[dict[str, str]] | None = None) -> dict
                 "tool_calls": tool_log,
                 "agent_type": "groq_tool_using_diagnostic_agent",
                 "memory_mode": "client_supplied_conversation_history",
+                "sensor_attached": sensor_analysis is not None,
                 "token_efficiency": {"max_completion_tokens": MAX_COMPLETION_TOKENS, "history_messages_used": len(_normalise_history(history))},
             }
         for call in calls:
@@ -170,7 +188,7 @@ def run_agent(message: str, history: list[dict[str, str]] | None = None) -> dict
             name = fn.get("name", "")
             try:
                 args = json.loads(fn.get("arguments") or "{}")
-                result = _run_tool(name, args)
+                result = _run_tool(name, args, sensor_analysis=sensor_analysis)
             except Exception as exc:
                 result = {"error": str(exc)}
             tool_log.append({"tool": name, "result": result})
@@ -185,6 +203,7 @@ def run_agent(message: str, history: list[dict[str, str]] | None = None) -> dict
         "tool_calls": tool_log,
         "agent_type": "groq_tool_using_diagnostic_agent",
         "memory_mode": "client_supplied_conversation_history",
+                "sensor_attached": sensor_analysis is not None,
         "tool_limit_reached": True,
         "token_efficiency": {"max_completion_tokens": MAX_COMPLETION_TOKENS, "history_messages_used": len(_normalise_history(history))},
     }

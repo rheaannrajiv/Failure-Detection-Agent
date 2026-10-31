@@ -15,3 +15,5 @@ class AgentChatResponse(BaseModel):
     agent_type: str
     memory_mode: str
     tool_limit_reached: bool = False
+    sensor_attached: bool = False
+    token_efficiency: dict = Field(default_factory=dict)

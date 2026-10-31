@@ -55,3 +55,48 @@ def agent_chat(payload: AgentChatRequest):
         raise HTTPException(status_code=status, detail=message) from exc
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Agent provider request failed: {exc}") from exc
+
+
+@router.post("/agent/investigate-with-sensor")
+async def agent_investigate_with_sensor(
+    message: str = Form(..., min_length=1, max_length=12000),
+    history: str = Form(default="[]"),
+    file: UploadFile = File(...),
+):
+    """Run the agent with an uploaded CSV/TXT/MAT sensor recording attached."""
+    import json
+    from functools import lru_cache
+
+    try:
+        conversation = json.loads(history)
+        if not isinstance(conversation, list):
+            raise ValueError("history must be a JSON array")
+        raw = await file.read()
+        if len(raw) > 15 * 1024 * 1024:
+            raise HTTPException(status_code=413, detail="Sensor file exceeds the 15 MB upload limit.")
+        channels = read_sensor_bytes(file.filename or "upload.csv", raw)
+        # Cache the selected public CWRU reference in this process to avoid
+        # downloading the same reference recordings for every request.
+        recordings = _cached_cwru_recordings()
+        sensor_result = analyse_against_healthy(channels, recordings["healthy"])
+        return run_agent(message, conversation, sensor_analysis=sensor_result)
+    except HTTPException:
+        raise
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=422, detail="history must contain valid JSON.") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except GroqProviderError as exc:
+        headers = {"Retry-After": str(max(1, int(exc.retry_after)))} if exc.retry_after else None
+        status = 429 if exc.status_code == 429 else (503 if exc.status_code >= 500 else 502)
+        detail = "Groq rate limit reached. Wait before retrying; your uploaded file was processed but the AI response was not completed." if status == 429 else f"Groq provider error: {exc}"
+        raise HTTPException(status_code=status, detail=detail, headers=headers) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Sensor-assisted agent request failed: {exc}") from exc
+
+
+from functools import lru_cache
+
+@lru_cache(maxsize=1)
+def _cached_cwru_recordings():
+    return load_builtin_cwru_recordings()
