@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, UploadFile, File, Form
+from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Header
 from uuid import uuid4
 from app.api.schemas import DiagnosisRequest, DiagnosisResponse, SensorAnalysisResponse
 from app.diagnostics.engine import extract_symptoms_from_text, rank_failures, select_next_check, FAILURES
@@ -39,10 +39,13 @@ async def analyse_sensor(file: UploadFile = File(...), healthy_reference: str = 
 from app.api.chat_schemas import AgentChatRequest, AgentChatResponse
 from app.agent.service import run_agent, GroqProviderError
 from app.memory.supabase_store import memory_store, MemoryUnavailable
+from app.auth.security import create_guest_session, create_user_session, require_session_owner
 
 @router.post("/agent/chat", response_model=AgentChatResponse)
-def agent_chat(payload: AgentChatRequest):
-    session_id = payload.session_id or uuid4()
+def agent_chat(payload: AgentChatRequest, authorization: str | None = Header(default=None), x_guest_token: str | None = Header(default=None, alias="X-Guest-Token")):
+    if not payload.session_id:
+        raise HTTPException(status_code=422, detail="Create a guest or authenticated session first and provide session_id.")
+    session_id = require_session_owner(str(payload.session_id), authorization, x_guest_token)
     try:
         supplied_history = [item.model_dump() for item in payload.history]
         history = memory_store.load_history(str(session_id)) if memory_store.enabled else supplied_history
@@ -77,6 +80,8 @@ async def agent_investigate_with_sensor(
     history: str = Form(default="[]"),
     session_id: str = Form(default=""),
     file: UploadFile = File(...),
+    authorization: str | None = Header(default=None),
+    x_guest_token: str | None = Header(default=None, alias="X-Guest-Token"),
 ):
     """Run the agent with an uploaded CSV/TXT/MAT sensor recording attached."""
     import json
@@ -84,9 +89,9 @@ async def agent_investigate_with_sensor(
 
     try:
         conversation = json.loads(history)
-        active_session = session_id.strip() or str(uuid4())
-        from uuid import UUID
-        active_session = str(UUID(active_session))
+        if not session_id.strip():
+            raise HTTPException(status_code=422, detail="Create a session first and provide session_id.")
+        active_session = require_session_owner(session_id.strip(), authorization, x_guest_token)
         if not isinstance(conversation, list):
             raise ValueError("history must be a JSON array")
         raw = await file.read()
@@ -175,3 +180,19 @@ def generate_diagnostic_report(payload: DiagnosticReportRequest):
 **Engineering note:** Any heuristic scores are evidence-ranking aids, not probabilities. Confirm diagnoses using machine-specific OEM limits, suitable measurements and qualified inspection. Follow site isolation, lockout/tagout and safety procedures.
 """
     return {"report_markdown": report, "format": "markdown", "status": "generated_from_supplied_investigation_data", "requires_engineering_review": True}
+
+
+@router.post("/auth/guest-session")
+def auth_guest_session():
+    """Create a signed guest session. Store the token securely in the client."""
+    return create_guest_session()
+
+
+@router.post("/auth/user-session")
+def auth_user_session(authorization: str | None = Header(default=None)):
+    """Create an owned diagnostic session from a Supabase access token.
+    Signup/login themselves are performed by Supabase Auth on the frontend.
+    """
+    if not authorization or not authorization.lower().startswith("bearer "):
+        raise HTTPException(status_code=401, detail="A Supabase Bearer access token is required.")
+    return create_user_session(authorization.split(" ", 1)[1].strip())
