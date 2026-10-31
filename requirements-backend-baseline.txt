@@ -1,0 +1,14 @@
+# Minimal backend dependency baseline for the FastAPI architecture.
+# Review against imports in the current backend before deployment.
+# Do not replace a working, project-specific requirements file without checking it.
+fastapi
+uvicorn[standard]
+pydantic
+python-multipart
+httpx
+groq
+supabase
+python-dotenv
+numpy
+pandas
+scipy

@@ -1,79 +1,135 @@
 # Failure Detective AI
 
-A Streamlit-based mechanical fault troubleshooting prototype combining a transparent rule-based knowledge base, a Groq-hosted chat assistant, inspection tracking, and recorded sensor-data anomaly screening.
+**AI-assisted mechanical fault diagnosis and investigation platform.**
 
-## Features
+Failure Detective AI helps users investigate possible mechanical faults using natural-language symptom descriptions, diagnostic rules, sensor data and a conversational AI assistant. The project is structured as a web application with a separate API backend.
 
-- 18 mechanical fault categories, symptom matching, heuristic evidence scores, and recommended inspections.
-- Groq-hosted AI chat. The API key is read from Streamlit Secrets, not stored in source code.
-- Manual/simulated sensor inputs for demonstrations, explicitly labelled as simulated.
-- **Built-in recorded sensor dataset:** no upload is needed. The app automatically fetches a preconfigured pair of public CWRU MATLAB recordings (healthy bearing and inner-race fault) on first analysis, then caches them for 24 hours. It calculates RMS, standard deviation, peak amplitude, crest factor, and mean, then compares the fault recording against the healthy reference range.
-- Downloadable sensor-assessment CSV and diagnostic report.
-- Public web access through a public Streamlit deployment; visitors generally do not need a Streamlit account to use a public app.
+## Project architecture
 
-## Run locally
+| Layer | Technology | Responsibility |
+|---|---|---|
+| Frontend | Next.js / React | Chat interface, symptom input, sensor upload, investigation history and reports |
+| Backend | Python / FastAPI | API endpoints and coordination of diagnostic services |
+| AI | Groq-hosted language model | Conversational interpretation and tool-assisted explanations |
+| Engineering logic | Fault catalogue and diagnostic modules | Fault ranking, evidence and inspection guidance |
+| Persistence | Supabase / PostgreSQL | Session and investigation data, as implemented |
+| Hosting | Vercel and Render | Frontend and backend deployment |
+| Source control | GitHub | Version control and deployment integration |
+
+The repository also retains the earlier Streamlit prototype as a fallback/demo version, if that folder is present.
+
+## Main capabilities
+
+- Conversational mechanical troubleshooting.
+- Rule-based ranking of possible mechanical faults.
+- Sensor-data analysis through the backend API.
+- Guest and authenticated session flows.
+- Investigation memory/persistence through Supabase.
+- Diagnostic report generation.
+- Web deployment with a separate frontend and backend.
+
+> **Important:** A ranked fault is a diagnostic hypothesis, not a confirmed failure. Rule-based evidence scores are heuristic rankings, not calibrated probabilities. Sensor results depend on the data, units, sampling conditions and analysis methods supplied.
+
+## Repository structure
+
+The exact folder layout can vary between project revisions. The migrated application is organized around:
+- `frontend/` — Next.js application.
+- `backend/` — FastAPI application and engineering services.
+- `app.py` — earlier Streamlit prototype, where retained.
+- `requirements.txt` — Python backend dependencies.
+- `DEVELOPMENT_SCHEMA.md` — system architecture and development overview.
+- `API_REFERENCE.md` — currently documented API surface.
+
+Check the actual repository tree before running commands; use the relevant folder as the working directory.
+
+## Running the backend locally
 
 1. Install Python 3.10 or newer.
-2. Download `app.py`, `requirements.txt`, and this README into the same folder.
-3. Open a terminal in that folder and run:
+2. Open a terminal in the backend project directory.
+3. Create and activate a virtual environment:
+
+   ```bash
+   python -m venv .venv
+   ```
+
+   Windows PowerShell:
+
+   ```powershell
+   .\.venv\Scripts\Activate.ps1
+   ```
+
+4. Install dependencies:
 
    ```bash
    python -m pip install -r requirements.txt
-   streamlit run app.py
    ```
 
-4. To enable the hosted chatbot locally, create `.streamlit/secrets.toml`:
+5. Create a local `.env` file using `.env.example` as a reference. Add the required credentials locally; do not commit the real `.env` file.
+6. Start the API using the entry point configured in the backend. For the previously used FastAPI entry point:
 
-   ```toml
-   GROQ_API_KEY = "your_actual_groq_api_key"
-   GROQ_MODEL = "openai/gpt-oss-20b"
+   ```bash
+   python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
    ```
 
-   Never commit the API key or `secrets.toml` to GitHub. On Streamlit Community Cloud, add these values in the app's Settings → Secrets.
+7. Open `http://127.0.0.1:8000/docs` to inspect the interactive API documentation.
 
-## Using the built-in real recorded dataset
+If the backend package or entry-point layout has changed, use the module path in the current backend source rather than assuming the example command still applies.
 
-1. Open **Real bearing data — ready to analyse**.
-2. Select **Load built-in dataset and analyse**. No upload or manual download is required.
-3. The app fetches two preconfigured CWRU samples from a public GitHub dataset mirror: `97_Normal_0.mat` (healthy, 0 HP) and `105_0.mat` (inner-race fault, 0 HP). Both use drive-end vibration (`DE_time`) at 12 kHz.
-4. The app derives healthy reference statistics and displays which features of the faulty recording fall outside the healthy range. You can download the results as a CSV.
+## Running the frontend locally
 
-The first analysis needs an internet connection to retrieve the public recordings. Streamlit caches the recordings for 24 hours, so repeat analysis generally does not need to download them again during that cache period. If the data source is temporarily unavailable, the app will show an error and can be retried later.
+1. Open a separate terminal in the frontend application directory (the project previously used `frontend/fd_frontend/`).
+2. Install JavaScript dependencies:
 
-### Dataset source
+   ```bash
+   npm install
+   ```
 
-- Official Case Western Reserve University Bearing Data Center: https://engineering.case.edu/bearingdatacenter/download-data-file
-- Public dataset mirror containing the preconfigured files: https://github.com/s-whynot/CWRU-dataset
+3. Configure the public frontend variables in `.env.local` using the variable names in `.env.example`.
+4. Start the development server:
 
-The recordings are real laboratory vibration measurements with seeded bearing faults. They are not live readings from your own machine, and they do not provide universal temperature or motor-current thresholds.
+   ```bash
+   npm run dev
+   ```
 
-## How the baseline works
+5. Open `http://localhost:3000`.
 
-The app divides each recorded signal into windows and computes time-domain features. It builds the healthy reference range from the built-in healthy recording's 1st and 99th percentiles, then checks whether the test recording's median feature falls outside that range. The reference is empirical and specific to the uploaded data.
+## Environment variables and secrets
 
-This is a **statistical anomaly screen**, not a trained classifier and not proof of a mechanical fault. A single healthy file may not represent all speeds, loads, machine types, or normal variation. Use multiple healthy recordings across relevant operating conditions for stronger results. Sensor units are not inferred reliably from every public file, so the feature values are compared in the original signal scale.
+The frontend may use public configuration values such as:
+- `NEXT_PUBLIC_API_BASE_URL`
+- `NEXT_PUBLIC_SUPABASE_URL`
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
 
-## Public deployment
+The backend may require private values such as:
+- `GROQ_API_KEY`
+- `SUPABASE_URL`
+- `SUPABASE_SERVICE_ROLE_KEY`
+- `GUEST_SESSION_SECRET`
 
-The app can be hosted publicly on Streamlit Community Cloud. Viewers normally do not need to create or sign in to a Streamlit account when the app is public. To deploy:
+Use the actual variable names referenced by the current backend code and deployment settings. Never commit real keys, tokens, service-role credentials or `.env` files. The Supabase service-role key and Groq key must remain server-side.
 
-1. Push `app.py`, `requirements.txt`, and `README.md` to the GitHub repository.
-2. In Streamlit Community Cloud, deploy or reboot the app from that repository.
-3. Add `GROQ_API_KEY` and, optionally, `GROQ_MODEL` under the app's Secrets settings.
-4. Test the public URL in a private/incognito browser window. If the deployment is configured as private, change its sharing/visibility settings.
+## Deployment
 
-The host still requires an owner account to manage deployment. Public visitors should not need that account.
+- **Frontend:** Vercel. Set the frontend root directory to the directory containing its `package.json` (previously `frontend/fd_frontend/`).
+- **Backend:** Render. Configure the Python service's working directory, start command and environment variables to match the backend layout.
+- Configure backend CORS to allow the deployed frontend origin.
+- Keep production secrets in the hosting provider's environment-variable settings.
 
-## Limitations and safety
+## API overview
 
-- This is a student decision-support prototype, not a certified condition-monitoring system.
-- The current knowledge-base scores are heuristic evidence scores, not probabilities.
-- The built-in recorded-data module detects statistical deviations in recorded signals; it does not automatically prove which failure caused them.
-- The manual sensor panel is simulated/manual input. It is not a live hardware connection.
-- Do not use the output as the sole basis for safety-critical maintenance decisions. Follow site safety procedures and consult qualified personnel.
+The documented backend routes include health, fault catalogue, diagnosis, sensor analysis, agent chat, memory status, report generation and guest/user session creation. See [`API_REFERENCE.md`](API_REFERENCE.md). Confirm request and response schemas in the live OpenAPI page at `/docs`.
 
-## Project structure
+## Safety and limitations
 
-- `app.py` — Streamlit application and diagnostic logic.
-- `requirements.txt` — Python dependencies.
-- `README.md` — setup, dataset workflow, deployment, and limitations.
+- This is an educational/engineering decision-support prototype, not a certified industrial safety or diagnostic system.
+- The fault catalogue covers only the fault categories encoded in the application.
+- Rule-based rankings are heuristic and may omit faults not represented in the knowledge base.
+- AI-generated explanations can be incorrect; verify findings with measurements and qualified inspection.
+- Simulated or manually entered readings are not measurements from connected equipment.
+- Follow site safety procedures and use qualified personnel when inspecting rotating, electrical, hot or pressurized machinery.
+
+## Development documentation
+
+- [`DEVELOPMENT_SCHEMA.md`](DEVELOPMENT_SCHEMA.md) — architecture, modules, workflow and development sequence.
+- [`API_REFERENCE.md`](API_REFERENCE.md) — API route summary.
+- [`.env.example`](.env.example) — variable-name reference only; contains no credentials.
