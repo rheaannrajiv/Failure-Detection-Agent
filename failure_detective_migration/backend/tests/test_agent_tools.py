@@ -20,3 +20,9 @@ def test_agent_diagnostic_tool_runs_existing_engine():
 def test_agent_rejects_unknown_symptoms():
     result = _run_tool("diagnose_machine", {"description": "test", "symptoms": ["made up symptom"]})
     assert "unknown_symptoms" in result
+
+
+def test_catalog_tool_is_compact_and_complete():
+    result = _run_tool("list_fault_catalog", {})
+    assert len(result["faults"]) == 18
+    assert all(len(item["checks"]) <= 4 for item in result["faults"])

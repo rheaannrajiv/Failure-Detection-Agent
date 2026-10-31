@@ -36,7 +36,7 @@ async def analyse_sensor(file: UploadFile = File(...), healthy_reference: str = 
 
 # Agent endpoint is added separately to keep the existing deterministic APIs intact.
 from app.api.chat_schemas import AgentChatRequest, AgentChatResponse
-from app.agent.service import run_agent
+from app.agent.service import run_agent, GroqProviderError
 
 @router.post("/agent/chat", response_model=AgentChatResponse)
 def agent_chat(payload: AgentChatRequest):
@@ -44,6 +44,11 @@ def agent_chat(payload: AgentChatRequest):
         return run_agent(payload.message, [item.model_dump() for item in payload.history])
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except GroqProviderError as exc:
+        headers = {"Retry-After": str(max(1, int(exc.retry_after)))} if exc.retry_after else None
+        status = 429 if exc.status_code == 429 else (503 if exc.status_code >= 500 else 502)
+        detail = "Groq rate limit reached. Wait before retrying; the backend has not lost your diagnostic session." if status == 429 else f"Groq provider error: {exc}"
+        raise HTTPException(status_code=status, detail=detail, headers=headers) from exc
     except RuntimeError as exc:
         message = str(exc)
         status = 503 if "not configured" in message else 502
