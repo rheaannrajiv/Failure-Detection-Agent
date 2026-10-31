@@ -1,0 +1,9 @@
+# Runtime dependencies. Python version is pinned in .python-version.
+fastapi>=0.115,<1.0
+uvicorn>=0.30,<1.0
+python-multipart>=0.0.9
+numpy>=1.26,<3.0
+pandas>=2.1,<4.0
+scipy>=1.11,<2.0
+requests>=2.31,<3.0
+pydantic>=2.7,<3.0

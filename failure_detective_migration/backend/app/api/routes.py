@@ -133,3 +133,45 @@ def _cached_cwru_recordings():
 @router.get("/memory/status")
 def memory_status():
     return {"persistent_memory_configured": memory_store.enabled, "provider": "supabase" if memory_store.enabled else "client_supplied_history_fallback", "note": "No conversation content is returned by this endpoint."}
+
+
+from app.api.report_schemas import DiagnosticReportRequest
+
+@router.post("/reports/generate")
+def generate_diagnostic_report(payload: DiagnosticReportRequest):
+    """Generate a structured Markdown report from supplied, reviewed investigation data."""
+    def bullets(items, empty="Not provided"):
+        return "\n".join(f"- {str(item)}" for item in items) if items else f"- {empty}"
+
+    conditions = bullets([f"{k}: {v}" for k, v in payload.operating_conditions.items()])
+    faults = bullets([f"{item.get('fault', item.get('name', 'Candidate'))}: {item.get('score', 'score not supplied')} — {item.get('reason', item.get('evidence', 'No rationale supplied'))}" for item in payload.ranked_faults])
+    report = f"""# Mechanical Diagnostic Investigation Report
+
+## 1. Machine
+{payload.machine}
+
+## 2. Operating conditions
+{conditions}
+
+## 3. Reported symptoms
+{bullets(payload.symptoms)}
+
+## 4. Inspection findings
+{bullets(payload.findings)}
+
+## 5. Sensor-data findings
+{bullets(payload.sensor_findings)}
+
+## 6. Ranked fault hypotheses
+{faults}
+
+## 7. Recommended actions
+{bullets(payload.recommended_actions)}
+
+## 8. Limitations and uncertainty
+{bullets(payload.limitations, 'The submitted information may be incomplete. Findings are not a confirmed root cause.')}
+
+---
+**Engineering note:** Any heuristic scores are evidence-ranking aids, not probabilities. Confirm diagnoses using machine-specific OEM limits, suitable measurements and qualified inspection. Follow site isolation, lockout/tagout and safety procedures.
+"""
+    return {"report_markdown": report, "format": "markdown", "status": "generated_from_supplied_investigation_data", "requires_engineering_review": True}

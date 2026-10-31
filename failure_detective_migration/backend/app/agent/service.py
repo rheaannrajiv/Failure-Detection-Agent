@@ -46,6 +46,11 @@ TOOLS = [
         "parameters": {"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"], "additionalProperties": False},
     }},
     {"type": "function", "function": {
+        "name": "calculate_rotational_frequency",
+        "description": "Convert a known shaft speed in RPM to rotational frequency in Hz and calculate 1x, 2x and 3x running-speed components. This is a calculation, not a fault diagnosis.",
+        "parameters": {"type": "object", "properties": {"rpm": {"type": "number", "exclusiveMinimum": 0}}, "required": ["rpm"], "additionalProperties": False},
+    }},
+    {"type": "function", "function": {
         "name": "diagnose_machine",
         "description": "Run the deterministic 18-category fault-ranking engine using machine description, symptom labels and inspection findings.",
         "parameters": {"type": "object", "properties": {
@@ -113,6 +118,15 @@ def _run_tool(name: str, arguments: dict[str, Any], sensor_analysis: dict[str, A
             "evidence_notes": sensor_analysis.get("evidence_notes", []),
             "method_note": sensor_analysis.get("method_note", ""),
         }
+    if name == "calculate_rotational_frequency":
+        try:
+            rpm = float(arguments.get("rpm"))
+            if not 0 < rpm <= 100000:
+                return {"error": "rpm must be greater than 0 and no more than 100000."}
+            hz = rpm / 60.0
+            return {"rpm": rpm, "rotational_frequency_hz": round(hz, 5), "running_speed_components_hz": {"1x": round(hz, 5), "2x": round(2*hz, 5), "3x": round(3*hz, 5)}, "note": "Frequency components alone do not identify a fault; interpret with measurement direction, phase, load, machine geometry and spectrum quality."}
+        except (TypeError, ValueError):
+            return {"error": "rpm must be a valid number."}
     if name == "diagnose_machine":
         description = str(arguments.get("description", ""))[:4000]
         symptoms = arguments.get("symptoms") or []
