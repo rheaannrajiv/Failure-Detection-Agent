@@ -70,10 +70,16 @@ export default function Home() {
       const sb=getSupabase();
       const result = authMode==='signup' ? await sb.auth.signUp({email,password}) : await sb.auth.signInWithPassword({email,password});
       if (result.error) throw result.error;
-      if (!result.data.session) { setError('Check your email to confirm your account, then sign in.'); setBusy(false); return; }
-      if (!result.data.user) throw new Error('Authentication succeeded without returning a user profile. Please try signing in again.');
-      setAccessToken(result.data.session.access_token); setUserEmail(result.data.user.email || email);
-      const created=await createUserSession(result.data.session.access_token); setSession(created); setAuthOpen(false); setPassword('');
+      const session = result.data.session;
+      const user = result.data.user;
+      if (!session) { setError('Check your email to confirm your account, then sign in.'); return; }
+      if (!user) throw new Error('Authentication succeeded without returning a user profile. Please try signing in again.');
+      setAccessToken(session.access_token);
+      setUserEmail(user.email ?? email);
+      const created = await createUserSession(session.access_token);
+      setSession(created);
+      setAuthOpen(false);
+      setPassword('');
     } catch(e) { setError(e instanceof Error ? e.message : 'Authentication failed.'); }
     finally { setBusy(false); }
   }
