@@ -13,6 +13,7 @@ from typing import Any
 import requests
 
 from app.diagnostics.engine import FAILURES, extract_symptoms_from_text, rank_failures, select_next_check
+from app.knowledge.library import search_knowledge
 
 GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
 MAX_TOOL_ROUNDS = 3
@@ -24,7 +25,7 @@ MAX_TOOL_RESULT_CHARS = 5000
 SYSTEM_PROMPT = """You are Failure Detective AI, a mechanical fault-investigation agent.
 Investigate systematically. Understand the machine, symptoms, operating context and measurements.
 Use diagnose_machine when enough symptom information exists; use list_fault_catalog only when you need
-supported symptom/check labels. Interpret tool results, then ask focused follow-up questions or give
+supported symptom/check labels. Use search_mechanical_knowledge for relevant mechanisms, indicators and inspection guidance. Interpret tool results, then ask focused follow-up questions or give
 ranked hypotheses and practical next checks. Never invent measurements, inspections, sources or certainty.
 
 The 18-category engine produces heuristic evidence scores, NOT probabilities or confirmed diagnoses.
@@ -38,6 +39,11 @@ TOOLS = [
         "name": "list_fault_catalog",
         "description": "Get the supported fault category names and concise symptom/check labels.",
         "parameters": {"type": "object", "properties": {}, "additionalProperties": False},
+    }},
+    {"type": "function", "function": {
+        "name": "search_mechanical_knowledge",
+        "description": "Retrieve concise engineering mechanisms, indicators, inspection checks and cautions for relevant mechanical fault topics.",
+        "parameters": {"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"], "additionalProperties": False},
     }},
     {"type": "function", "function": {
         "name": "diagnose_machine",
@@ -95,6 +101,8 @@ def _run_tool(name: str, arguments: dict[str, Any], sensor_analysis: dict[str, A
             {"name": fault, "symptoms": data["symptoms"][:5], "checks": data["checks"][:4]}
             for fault, data in FAILURES.items()
         ]}
+    if name == "search_mechanical_knowledge":
+        return {"references": search_knowledge(str(arguments.get("query", "")), limit=3), "note": "General engineering guidance; verify against OEM documentation and machine-specific operating conditions."}
     if name == "analyze_uploaded_sensor_data":
         if sensor_analysis is None:
             return {"error": "No sensor file was attached to this investigation."}
@@ -179,7 +187,7 @@ def run_agent(message: str, history: list[dict[str, str]] | None = None, sensor_
                 "model": model,
                 "tool_calls": tool_log,
                 "agent_type": "groq_tool_using_diagnostic_agent",
-                "memory_mode": "client_supplied_conversation_history",
+                "memory_mode": "conversation_history_supplied_by_api",
                 "sensor_attached": sensor_analysis is not None,
                 "token_efficiency": {"max_completion_tokens": MAX_COMPLETION_TOKENS, "history_messages_used": len(_normalise_history(history))},
             }
@@ -202,7 +210,7 @@ def run_agent(message: str, history: list[dict[str, str]] | None = None, sensor_
         "model": model,
         "tool_calls": tool_log,
         "agent_type": "groq_tool_using_diagnostic_agent",
-        "memory_mode": "client_supplied_conversation_history",
+        "memory_mode": "conversation_history_supplied_by_api",
                 "sensor_attached": sensor_analysis is not None,
         "tool_limit_reached": True,
         "token_efficiency": {"max_completion_tokens": MAX_COMPLETION_TOKENS, "history_messages_used": len(_normalise_history(history))},

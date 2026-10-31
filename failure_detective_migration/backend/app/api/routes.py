@@ -1,4 +1,5 @@
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form
+from uuid import uuid4
 from app.api.schemas import DiagnosisRequest, DiagnosisResponse, SensorAnalysisResponse
 from app.diagnostics.engine import extract_symptoms_from_text, rank_failures, select_next_check, FAILURES
 from app.signal_processing.service import read_sensor_bytes, load_builtin_cwru_recordings, analyse_against_healthy
@@ -37,11 +38,24 @@ async def analyse_sensor(file: UploadFile = File(...), healthy_reference: str = 
 # Agent endpoint is added separately to keep the existing deterministic APIs intact.
 from app.api.chat_schemas import AgentChatRequest, AgentChatResponse
 from app.agent.service import run_agent, GroqProviderError
+from app.memory.supabase_store import memory_store, MemoryUnavailable
 
 @router.post("/agent/chat", response_model=AgentChatResponse)
 def agent_chat(payload: AgentChatRequest):
+    session_id = payload.session_id or uuid4()
     try:
-        return run_agent(payload.message, [item.model_dump() for item in payload.history])
+        supplied_history = [item.model_dump() for item in payload.history]
+        history = memory_store.load_history(str(session_id)) if memory_store.enabled else supplied_history
+        result = run_agent(payload.message, history)
+        result["session_id"] = session_id
+        if memory_store.enabled:
+            memory_store.append_turn(str(session_id), payload.message, result.get("reply", ""), {"tool_calls": result.get("tool_calls", [])})
+            result["memory_mode"] = "supabase_persistent_session"
+        else:
+            result["memory_mode"] = "client_supplied_history_fallback"
+        return result
+    except MemoryUnavailable as exc:
+        raise HTTPException(status_code=503, detail=f"Conversation memory is temporarily unavailable: {exc}") from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except GroqProviderError as exc:
@@ -61,6 +75,7 @@ def agent_chat(payload: AgentChatRequest):
 async def agent_investigate_with_sensor(
     message: str = Form(..., min_length=1, max_length=12000),
     history: str = Form(default="[]"),
+    session_id: str = Form(default=""),
     file: UploadFile = File(...),
 ):
     """Run the agent with an uploaded CSV/TXT/MAT sensor recording attached."""
@@ -69,6 +84,9 @@ async def agent_investigate_with_sensor(
 
     try:
         conversation = json.loads(history)
+        active_session = session_id.strip() or str(uuid4())
+        from uuid import UUID
+        active_session = str(UUID(active_session))
         if not isinstance(conversation, list):
             raise ValueError("history must be a JSON array")
         raw = await file.read()
@@ -79,7 +97,17 @@ async def agent_investigate_with_sensor(
         # downloading the same reference recordings for every request.
         recordings = _cached_cwru_recordings()
         sensor_result = analyse_against_healthy(channels, recordings["healthy"])
-        return run_agent(message, conversation, sensor_analysis=sensor_result)
+        effective_history = memory_store.load_history(active_session) if memory_store.enabled else conversation
+        result = run_agent(message, effective_history, sensor_analysis=sensor_result)
+        result["session_id"] = active_session
+        if memory_store.enabled:
+            memory_store.append_turn(active_session, message, result.get("reply", ""), {"tool_calls": result.get("tool_calls", []), "sensor_attached": True})
+            result["memory_mode"] = "supabase_persistent_session"
+        else:
+            result["memory_mode"] = "client_supplied_history_fallback"
+        return result
+    except MemoryUnavailable as exc:
+        raise HTTPException(status_code=503, detail=f"Conversation memory is temporarily unavailable: {exc}") from exc
     except HTTPException:
         raise
     except json.JSONDecodeError as exc:
@@ -100,3 +128,8 @@ from functools import lru_cache
 @lru_cache(maxsize=1)
 def _cached_cwru_recordings():
     return load_builtin_cwru_recordings()
+
+
+@router.get("/memory/status")
+def memory_status():
+    return {"persistent_memory_configured": memory_store.enabled, "provider": "supabase" if memory_store.enabled else "client_supplied_history_fallback", "note": "No conversation content is returned by this endpoint."}
