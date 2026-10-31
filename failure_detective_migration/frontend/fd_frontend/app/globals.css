@@ -364,3 +364,109 @@ body{min-width:320px}
 @media(prefers-reduced-motion:reduce){
  .hero-icon:after,.hero-ring,.hero-core{animation:none!important}
 }
+
+
+/* WARM PRISM REFINEMENT — legibility, compact mobile layout, calmer hero */
+:root{
+ --bg:#090B10; --panel:#111720; --panel2:#171E28; --line:#2B3542;
+ --muted:#A5AAB2; --text:#F2F0E9; --cyan:#FF6037; --cyan2:#D94A2B;
+}
+body{background:#090B10;color:#F2F0E9;font-family:'Manrope',sans-serif}
+.shell{background:
+ radial-gradient(ellipse at 70% 15%,rgba(115,54,53,.22),transparent 42%),
+ radial-gradient(ellipse at 20% 90%,rgba(255,96,55,.06),transparent 35%),#090B10}
+.content{background:transparent}
+.welcome h1{color:#F5F4ED;text-shadow:0 2px 22px rgba(0,0,0,.45);font-size:clamp(40px,5.2vw,58px);line-height:1.08;letter-spacing:-1.7px}
+.welcome h1 em{color:#FF7957;text-shadow:0 0 22px rgba(255,96,55,.12)}
+.hero-copy{color:#D0D0CC;font-size:15px;line-height:1.72;max-width:570px}
+.eyebrow{color:#D0B9B1}
+.pulse{background:#FF6037;box-shadow:0 0 12px rgba(255,96,55,.65)}
+.capabilities{color:#D0C8C3;font-size:11px}
+.capabilities svg,.welcome-note svg{color:#FF7957}
+.welcome-note{color:#AFA6A0;font-size:10px}
+.prompt-grid button{background:linear-gradient(125deg,rgba(28,31,37,.96),rgba(20,22,28,.98));border-color:#3C3432;color:#F5F0E9;box-shadow:0 8px 26px rgba(0,0,0,.16)}
+.prompt-grid button:hover{border-color:rgba(255,96,55,.65);background:#211A19}
+.prompt-icon{background:rgba(255,96,55,.12);color:#FF7957}
+.prompt-grid b{font-size:13px;color:#FFF4ED}
+.prompt-grid small{font-size:11px;color:#B9AAA2}
+.hero-icon{isolation:isolate}
+.hero-icon:after{
+ content:"";position:absolute;inset:-12px;border-radius:28px;
+ background:
+   radial-gradient(circle at 50% 50%,rgba(255,96,55,.13),transparent 58%),
+   repeating-linear-gradient(135deg,transparent 0 9px,rgba(255,96,55,.035) 10px 11px);
+ border:1px solid rgba(255,96,55,.20);z-index:-1;
+ animation:diagnostic-pulse 5s ease-in-out infinite;
+}
+.hero-ring{border:1px solid rgba(255,96,55,.30);border-radius:26px;inset:5px;transform:rotate(45deg)}
+.ring-two{inset:16px;border:1px dashed rgba(255,150,115,.38);border-radius:20px;animation:rotate 32s linear infinite}
+.hero-core{background:linear-gradient(145deg,#47251F,#241817);border:1px solid rgba(255,96,55,.75);color:#FF7957;box-shadow:0 0 34px rgba(255,96,55,.16)}
+@keyframes diagnostic-pulse{0%,100%{transform:scale(.97);opacity:.55}50%{transform:scale(1.04);opacity:1}}
+/* Do not load the old rainbow orbit GIF; the hero is now CSS-drawn and crisp. */
+.hero-icon:after{background:
+ radial-gradient(circle at 50% 50%,rgba(255,96,55,.12),transparent 58%),
+ repeating-linear-gradient(135deg,transparent 0 9px,rgba(255,96,55,.035) 10px 11px)}
+.topbar{background:rgba(9,11,16,.94);border-color:#2B3038;backdrop-filter:blur(14px)}
+.sidebar{background:#0B0F15}
+.new-chat{background:linear-gradient(100deg,#FF6037,#E94F2D);color:#160D0B}
+.nav-item.active{color:#FF7957;background:rgba(255,96,55,.09);border-color:rgba(255,96,55,.24)}
+.live-dot,.status-dot{background:#FF6037;box-shadow:0 0 10px rgba(255,96,55,.55)}
+.send-btn,.auth-submit{background:#FF6037;color:#1A0D09}
+.composer{background:#111720;border-color:#3A3432}
+.composer textarea{font-size:14px}
+.composer textarea::placeholder{color:#A89B94}
+.attach-btn{color:#C5B9B2;font-size:12px}
+.disclaimer{color:#A99C95;font-size:10px}
+.message-content{font-size:14px;line-height:1.8}
+.markdown-body h3{color:#FF7957}
+.markdown-body th{color:#FF9A7C;background:#251A19}
+.markdown-body blockquote{border-color:#FF6037;background:rgba(255,96,55,.06)}
+.secure svg,.help-btn:hover{color:#FF7957}
+.sign-in{color:#F1E8E2;border-color:#57423D}
+.sign-in:hover{border-color:#FF7957;color:#FF7957}
+@media(max-width:650px){
+ .shell{display:block;min-height:100svh;height:auto}
+ .main-panel{width:100%;max-width:100%;min-height:100svh;margin:0;padding:0}
+ .topbar{position:sticky;top:0;z-index:35;margin:0;transform:none;flex:0 0 56px;height:56px;min-height:56px;padding:0 12px;background:rgba(245,244,237,.97);color:#351E1C;border-bottom:1px solid #D7D4C8}
+ .breadcrumb{color:#766B65;font-size:9px}
+ .breadcrumb b{color:#351E1C}
+ .top-left,.top-right{min-width:0}
+ .top-right .help-btn{color:#6E5D56}
+ .sign-in{background:#F5F4ED;color:#351E1C;border-color:#C9C2B7}
+ .content{padding:17px 16px 12px;min-height:0;overflow:visible}
+ .welcome{margin:0 auto;max-width:520px}
+ .eyebrow{font-size:9px;letter-spacing:1.15px}
+ .hero-icon{width:78px;height:78px;margin:15px auto 15px}
+ .hero-core{width:54px;height:54px;border-radius:17px}
+ .hero-core svg{width:26px;height:26px}
+ .hero-icon:after{inset:-7px;border-radius:22px}
+ .hero-ring{inset:4px;border-radius:19px}
+ .ring-two{inset:12px;border-radius:15px}
+ .welcome h1{font-size:clamp(32px,8vw,43px);line-height:1.1;letter-spacing:-1.1px;color:#F5F4ED}
+ .welcome h1 em{color:#FF7957}
+ .hero-copy{font-size:15px;line-height:1.58;color:#D4D0CC;margin:12px auto 14px;padding:0 2px}
+ .capabilities{font-size:11px;gap:9px 14px;margin:14px 0 18px;color:#D7CECA}
+ .capabilities span{white-space:normal}
+ .prompt-grid{gap:8px}
+ .prompt-grid button{min-height:64px;padding:12px}
+ .prompt-grid b{font-size:14px}
+ .prompt-grid small{font-size:12px}
+ .welcome-note{font-size:10px;margin:13px 0 8px}
+ .composer-wrap{position:sticky;bottom:0;z-index:25;width:100%;margin:0;padding:8px 12px max(9px,env(safe-area-inset-bottom));background:linear-gradient(180deg,rgba(9,11,16,0),rgba(9,11,16,.96) 18%)}
+ .composer{padding:10px 11px 8px;border-radius:12px;background:#151A22}
+ .composer textarea{min-height:42px;font-size:14px}
+ .composer-bottom{margin-top:4px}
+ .disclaimer{font-size:9px;line-height:1.35;margin-top:6px}
+ .conversation{padding-bottom:8px}
+ .message-content{font-size:14px}
+ .sidebar{position:fixed;top:0;bottom:0;left:0;width:min(280px,86vw);transform:translateX(-105%);z-index:90}
+ .sidebar.open{transform:translateX(0)}
+}
+@media(max-width:380px){
+ .content{padding:14px 12px 8px}
+ .hero-copy{font-size:14px}
+ .welcome h1{font-size:31px}
+ .capabilities{font-size:10px}
+ .prompt-grid b{font-size:13px}
+ .prompt-grid small{font-size:11px}
+}
