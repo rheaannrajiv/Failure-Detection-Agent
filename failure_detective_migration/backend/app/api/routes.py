@@ -33,3 +33,20 @@ async def analyse_sensor(file: UploadFile = File(...), healthy_reference: str = 
         raise
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+# Agent endpoint is added separately to keep the existing deterministic APIs intact.
+from app.api.chat_schemas import AgentChatRequest, AgentChatResponse
+from app.agent.service import run_agent
+
+@router.post("/agent/chat", response_model=AgentChatResponse)
+def agent_chat(payload: AgentChatRequest):
+    try:
+        return run_agent(payload.message, [item.model_dump() for item in payload.history])
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        message = str(exc)
+        status = 503 if "not configured" in message else 502
+        raise HTTPException(status_code=status, detail=message) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Agent provider request failed: {exc}") from exc

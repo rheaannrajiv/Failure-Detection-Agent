@@ -1,4 +1,4 @@
-# Failure Detective AI – Backend (Milestone 1)
+# Failure Detective AI – Backend (Milestone 2 – Agent foundation)
 
 This FastAPI service extracts the existing mechanical fault ranking and sensor-analysis helpers from the Streamlit application. The original Streamlit application is preserved in `../legacy/app.py` as a fallback.
 
@@ -18,6 +18,7 @@ Open `http://127.0.0.1:8000/docs` for interactive API documentation.
 ## Endpoints
 
 - `GET /api/health`
+- `POST /api/agent/chat` (Groq-powered tool-calling agent; pass recent conversation history in each request)
 - `GET /api/faults`
 - `POST /api/diagnose`
 - `POST /api/sensors/analyse` (multipart upload; currently compares against the configured CWRU healthy reference)
@@ -28,7 +29,7 @@ Open `http://127.0.0.1:8000/docs` for interactive API documentation.
 - Scores are evidence scores, not calibrated probabilities.
 - Sensor comparison is empirical and is not a universal threshold or standalone fault classifier.
 - The CWRU reference represents a specific laboratory bearing setup; arbitrary machinery signals may not be comparable.
-- No LLM agent, persistent memory, authentication, or production database is implemented in this milestone.
+- The Groq-powered agent can call the deterministic fault catalog and diagnosis engine. Conversation context is currently client-supplied and is not persisted by the backend. Supabase-backed persistent memory and authentication are later milestones. Configure `GROQ_API_KEY` and optionally `GROQ_MODEL` as Render environment variables. The default model is `openai/gpt-oss-20b`.
 
 ## Tests
 
