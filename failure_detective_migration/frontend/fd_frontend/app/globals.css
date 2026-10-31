@@ -470,3 +470,16 @@ body{background:#090B10;color:#F2F0E9;font-family:'Manrope',sans-serif}
  .prompt-grid b{font-size:13px}
  .prompt-grid small{font-size:11px}
 }
+
+
+/* Dark Prism readability fix: keep typed text bright on the dark composer. */
+.composer textarea,
+.composer textarea:focus {
+  color: #F1F3F5 !important;
+  -webkit-text-fill-color: #F1F3F5;
+  caret-color: #FF6037;
+}
+.composer textarea::placeholder {
+  color: #A7ADB7 !important;
+  opacity: 1;
+}

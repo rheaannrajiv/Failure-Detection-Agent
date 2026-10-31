@@ -3,7 +3,25 @@ export type SessionInfo = { session_id: string; mode: 'guest' | 'authenticated';
 export type ChatResult = { reply: string; model?: string; tool_calls?: Array<Record<string, unknown>>; memory_mode?: string; session_id?: string; tool_limit_reached?: boolean; token_efficiency?: Record<string, unknown> };
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, { ...init, headers: { 'Content-Type': 'application/json', ...(init?.headers || {}) }, cache: 'no-store' });
+  const headers = new Headers(init?.headers || {});
+  // Only JSON requests need this header. Avoid triggering a CORS preflight for simple GET requests.
+  if (init?.body && !(init.body instanceof FormData) && !headers.has('Content-Type')) {
+    headers.set('Content-Type', 'application/json');
+  }
+
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}${path}`, {
+      ...init,
+      headers,
+      cache: 'no-store',
+    });
+  } catch {
+    throw new Error(
+      `Cannot reach the Failure Detective backend (${API_BASE}). Check that the Render service is running and that its CORS_ORIGINS / VERCEL_FRONTEND_URL settings include this website.`
+    );
+  }
+
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
     const detail = typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail || data);
@@ -36,12 +54,25 @@ export async function investigateWithSensor(message: string, file: File, session
   const headers: Record<string,string> = {};
   if (session.guest_token) headers['X-Guest-Token'] = session.guest_token;
   if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
-  const res = await fetch(`${API_BASE}/api/agent/investigate-with-sensor`, { method: 'POST', headers, body: form });
+
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}/api/agent/investigate-with-sensor`, { method: 'POST', headers, body: form });
+  } catch {
+    throw new Error(
+      `Cannot reach the Failure Detective backend (${API_BASE}). Check the Render service and its CORS settings for this website.`
+    );
+  }
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) { const detail = typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail || data); throw new Error(`${res.status}: ${detail || res.statusText}`); }
+  if (!res.ok) {
+    const detail = typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail || data);
+    throw new Error(`${res.status}: ${detail || res.statusText}`);
+  }
   return data as ChatResult;
 }
-export async function getHealth() { return request<{status:string;service:string;version:string}>('/api/health'); }
+export async function getHealth() {
+  return request<{status:string;service:string;version:string}>('/api/health');
+}
 
 export async function generateReport(payload: { machine: string; operating_conditions?: Record<string, unknown>; symptoms?: string[]; findings?: string[]; ranked_faults?: Array<Record<string, unknown>>; sensor_findings?: string[]; recommended_actions?: string[]; limitations?: string[] }, session: SessionInfo, accessToken?: string): Promise<{report_markdown:string; format:string}> {
   const headers: Record<string,string> = {};
