@@ -483,3 +483,51 @@ body{background:#090B10;color:#F2F0E9;font-family:'Manrope',sans-serif}
   color: #A7ADB7 !important;
   opacity: 1;
 }
+
+/* Dark Prism: high-contrast diagnostic response typography.
+   The legacy Warm Prism markdown rules above must not tint response text brown. */
+.message-content,
+.message-content.markdown-body {
+  color: #E8EDF4 !important;
+}
+.message-content.markdown-body :is(p, li, ul, ol, blockquote, span, div) {
+  color: #D8E0E8;
+}
+.message-content.markdown-body :is(h1, h2, h3, h4, h5, h6) {
+  color: #F4F6F8 !important;
+  font-weight: 700;
+}
+.message-content.markdown-body :is(h1, h2, h3) {
+  margin-top: 1.15em;
+  margin-bottom: .55em;
+}
+.message-content.markdown-body h3,
+.message-content.markdown-body h4 {
+  color: #FF7957 !important;
+}
+.message-content.markdown-body :is(strong, b) {
+  color: #FFFFFF !important;
+}
+.message-content.markdown-body :is(ul, ol) {
+  color: #D8E0E8 !important;
+  padding-left: 1.6rem;
+}
+.message-content.markdown-body li::marker {
+  color: #FF7957;
+}
+.message-content.markdown-body blockquote {
+  color: #D8E0E8 !important;
+  background: rgba(255, 96, 55, .07) !important;
+  border-left-color: #FF6037 !important;
+}
+.message-content.markdown-body code {
+  color: #A0C9CB !important;
+  background: #18212C !important;
+}
+.message-content.markdown-body th {
+  color: #FFB09A !important;
+  background: #241B1B !important;
+}
+.message-content.markdown-body td {
+  color: #D8E0E8 !important;
+}
