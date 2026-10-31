@@ -48,7 +48,11 @@ def agent_chat(payload: AgentChatRequest, authorization: str | None = Header(def
     session_id = require_session_owner(str(payload.session_id), authorization, x_guest_token)
     try:
         supplied_history = [item.model_dump() for item in payload.history]
-        history = memory_store.load_history(str(session_id)) if memory_store.enabled else supplied_history
+        # The browser's conversation is the immediate source of truth for the
+        # visible chat. Supabase adds persistence, but an empty/stale DB read
+        # must never erase context that the client has just supplied.
+        persisted_history = memory_store.load_history(str(session_id)) if memory_store.enabled else []
+        history = supplied_history if len(supplied_history) >= len(persisted_history) else persisted_history
         result = run_agent(payload.message, history)
         result["session_id"] = session_id
         if memory_store.enabled:
@@ -102,7 +106,8 @@ async def agent_investigate_with_sensor(
         # downloading the same reference recordings for every request.
         recordings = _cached_cwru_recordings()
         sensor_result = analyse_against_healthy(channels, recordings["healthy"])
-        effective_history = memory_store.load_history(active_session) if memory_store.enabled else conversation
+        persisted_history = memory_store.load_history(active_session) if memory_store.enabled else []
+        effective_history = conversation if len(conversation) >= len(persisted_history) else persisted_history
         result = run_agent(message, effective_history, sensor_analysis=sensor_result)
         result["session_id"] = active_session
         if memory_store.enabled:

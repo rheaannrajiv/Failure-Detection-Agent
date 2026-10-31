@@ -154,18 +154,30 @@ def _run_tool(name: str, arguments: dict[str, Any], sensor_analysis: dict[str, A
 
 
 def _normalise_history(history: list[dict[str, str]] | None) -> list[dict[str, str]]:
-    safe: list[dict[str, str]] = []
+    """Keep the newest valid turns within the context budget.
+
+    Walk backwards so an unusually long older message cannot cause all newer
+    conversation context to be discarded.
+    """
+    selected: list[dict[str, str]] = []
     used_chars = 0
-    for item in (history or [])[-MAX_HISTORY_MESSAGES:]:
+    for item in reversed((history or [])[-MAX_HISTORY_MESSAGES:]):
+        if not isinstance(item, dict):
+            continue
         role, content = item.get("role"), item.get("content")
         if role not in {"user", "assistant"} or not isinstance(content, str):
             continue
         content = content[:2500]
-        if used_chars + len(content) > MAX_HISTORY_CHARS:
+        remaining = MAX_HISTORY_CHARS - used_chars
+        if remaining <= 0:
             break
-        safe.append({"role": role, "content": content})
+        if len(content) > remaining:
+            # Preserve the newest part of a long message, where the current
+            # question or clarification is most likely to appear.
+            content = content[-remaining:]
+        selected.append({"role": role, "content": content})
         used_chars += len(content)
-    return safe
+    return list(reversed(selected))
 
 
 def run_agent(message: str, history: list[dict[str, str]] | None = None, sensor_analysis: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -196,8 +208,28 @@ def run_agent(message: str, history: list[dict[str, str]] | None = None, sensor_
         messages.append(choice)
         calls = choice.get("tool_calls") or []
         if not calls:
+            content = choice.get("content")
+            if not isinstance(content, str) or not content.strip():
+                # Some hosted-model responses can finish with an empty content
+                # field. Retry once without tools, retaining the full user
+                # message and the normalised conversation history.
+                retry_messages = [
+                    {"role": "system", "content": SYSTEM_PROMPT + "\nRespond directly to the user's latest message. If it is a follow-up, use the prior conversation; do not ask them to repeat details already provided."},
+                    *_normalise_history(history),
+                    {"role": "user", "content": message[:4000]},
+                ]
+                retry_data = _post_groq({**base_payload, "max_tokens": 900, "messages": retry_messages}, api_key)
+                retry_content = retry_data.get("choices", [{}])[0].get("message", {}).get("content")
+                content = retry_content if isinstance(retry_content, str) and retry_content.strip() else None
+            if not content:
+                content = (
+                    "I received your message, but the language model returned an empty answer. "
+                    "Your reported issue is: " + message[:700] + "\n\n"
+                    "I have retained the problem description. Please try sending the message once more; "
+                    "you do not need to re-enter the earlier details."
+                )
             return {
-                "reply": choice.get("content") or "I couldn't produce a response. Please rephrase the problem.",
+                "reply": content,
                 "model": model,
                 "tool_calls": tool_log,
                 "agent_type": "groq_tool_using_diagnostic_agent",

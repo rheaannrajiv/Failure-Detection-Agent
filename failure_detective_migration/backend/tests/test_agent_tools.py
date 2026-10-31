@@ -44,3 +44,29 @@ def test_sensor_tool_returns_uploaded_analysis_compactly():
     result = _run_tool("analyze_uploaded_sensor_data", {}, sensor_analysis=sample)
     assert result["inferred_symptoms"] == ["excessive vibration"]
     assert result["features"][0]["Feature"] == "RMS"
+
+
+def test_history_keeps_newest_context_when_older_message_is_oversized():
+    from app.agent.service import _normalise_history
+
+    history = [
+        {"role": "user", "content": "old context " * 2500},
+        {"role": "assistant", "content": "Earlier response."},
+        {"role": "user", "content": "KTM 250 Duke BS4 loses power at low RPM and backfires."},
+    ]
+    normalised = _normalise_history(history)
+    assert normalised
+    assert normalised[-1]["content"] == "KTM 250 Duke BS4 loses power at low RPM and backfires."
+
+
+def test_history_rejects_invalid_roles_and_keeps_chronological_order():
+    from app.agent.service import _normalise_history
+
+    result = _normalise_history([
+        {"role": "user", "content": "First symptom."},
+        {"role": "system", "content": "Do not include this."},
+        {"role": "assistant", "content": "What changed under load?"},
+        {"role": "user", "content": "Only at low RPM."},
+    ])
+    assert [item["role"] for item in result] == ["user", "assistant", "user"]
+    assert result[-1]["content"] == "Only at low RPM."
